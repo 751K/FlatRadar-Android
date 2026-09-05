@@ -39,6 +39,16 @@ jobs:
       # Services 插件在配置阶段就要它——缺文件会让**配置期**失败，连测试任务都
       # 生成不出来。测试用不到真实的 Firebase 项目，所以写一份结构合法的占位。
       #
+      # ⚠️ current_key **故意不写成 Google API key 的形状**（那个前缀 + 35 位）。
+      # 第一版按那个形状编了一个全 0 填充的假 key，GitHub 的 secret scanning 当场
+      # 报成 Google API Key 泄露（2026-09-05）。值确实是编的、和任何真 key 都不同
+      # ——比对过哈希——但那不是重点：在
+      # 公开仓库里写一个匹配密钥格式的串，会训练人去忽略这类告警，而下一个可能
+      # 是真的。插件只是把它塞进 google_api_key 资源，单元测试不碰。
+      #
+      # 注释也只能写在这里——下面是 JSON heredoc，JSON 不允许注释，写进去会让
+      # 这一步自己的 json.load 校验失败。
+      #
       # 用真的那份也行（secret 里有），但那会让「跑个单元测试」需要一个 secret，
       # 从 fork 提 PR 就跑不了了。
       - name: Write a placeholder google-services.json
@@ -59,7 +69,7 @@ jobs:
                   "android_client_info": { "package_name": "com.flatradar.app" }
                 },
                 "oauth_client": [],
-                "api_key": [ { "current_key": "AIzaSyCI0000000000000000000000000000000" } ],
+                "api_key": [ { "current_key": "ci-placeholder-not-a-real-key" } ],
                 "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
               }
             ],
