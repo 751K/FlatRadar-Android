@@ -8,6 +8,14 @@
 # `./gradlew :app:bundleRelease` 和一个上传 app-release.aab 的步骤即可。
 name: Release APK
 
+# 手动触发也会打**签名包**，只是不发 Release。
+#
+# 原来 dispatch 只打 debug 包，签名那条路径被 `startsWith(github.ref,
+# 'refs/tags/')` 挡着——想验证签名链路就必须真打一个版本 tag。那意味着
+# 「密钥配对没配对」这件事的暴露时机是最糟的那个：你要发版的那一刻。
+#
+# iOS 那边的 release.yml 就是这么死的：写好之后一次没跑过，等真要用时才发现
+# 它从头到尾是坏的。
 on:
   push:
     tags:
@@ -67,7 +75,7 @@ jobs:
         run: echo "APP_VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
 
       - name: Build signed release APK
-        if: startsWith(github.ref, 'refs/tags/') && env.ANDROID_SIGNING_READY == 'true'
+        if: env.ANDROID_SIGNING_READY == 'true'
         env:
           RELEASE_STORE_FILE: ../sign.p12
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
@@ -76,15 +84,36 @@ jobs:
           MAPS_API_KEY: ${{ secrets.MAPS_API_KEY || '' }}
         run: ./gradlew :app:assembleRelease
 
-      # 签名要当场核对。等用户装不上再回头查，一轮就是一次发版。
-      - name: Verify the APK is signed
-        if: startsWith(github.ref, 'refs/tags/') && env.ANDROID_SIGNING_READY == 'true'
+      # 签名要当场核对，而且要核对到**是哪一把密钥**。
+      #
+      # 「签上了」不够：换一把密钥照样能签出一个合法 APK，只是老用户装不上去
+      # ——Android 要求更新与已安装版本同签名，不同就直接拒绝安装。等用户报
+      # 「装不了」再回头查，一轮就是一次发版。
+      #
+      # 下面这个指纹取自已发布的 v1.34.0（apksigner verify --print-certs）。
+      # 它是公开信息，每个装了 App 的人手机里都有一份，写进仓库没有泄密问题。
+      # 哪天真要换密钥，改这一行——那时你**必须**知道自己在做什么。
+      - name: Verify the APK is signed by the expected key
+        if: env.ANDROID_SIGNING_READY == 'true'
+        env:
+          EXPECTED_SHA256: 0d24fe0b7fa7366a8cd595ae858a742ad345c20afd93d53410377a79ba8934e7
         run: |
           set -euo pipefail
           APK=app/build/outputs/apk/release/app-release.apk
           test -s "$APK" || { echo "::error::APK 不存在或为空"; exit 1; }
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
-          "$BT/apksigner" verify --print-certs "$APK"
+          "$BT/apksigner" verify --print-certs "$APK" | tee /tmp/certs.txt
+          ACTUAL=$(grep -oiE 'certificate SHA-256 digest: [0-9a-f]{64}' /tmp/certs.txt \
+                   | head -1 | awk '{print $NF}' | tr 'A-Z' 'a-z')
+          test -n "$ACTUAL" || { echo "::error::没能从 apksigner 输出里读出指纹"; exit 1; }
+          if [ "$ACTUAL" != "$EXPECTED_SHA256" ]; then
+            echo "::error::签名密钥不是预期的那把。"
+            echo "::error::期望 $EXPECTED_SHA256"
+            echo "::error::实际 $ACTUAL"
+            echo "::error::用这个包发版会让所有老用户装不上更新。"
+            exit 1
+          fi
+          echo "✅ 签名密钥与已发布版本一致（$ACTUAL）"
 
       - name: Upload APK to Release
         if: startsWith(github.ref, 'refs/tags/') && env.ANDROID_SIGNING_READY == 'true'
@@ -92,14 +121,25 @@ jobs:
         with:
           files: app/build/outputs/apk/release/app-release.apk
 
-      - name: Build debug APK (manual trigger)
-        if: github.event_name == 'workflow_dispatch'
+      # 手动触发：签名包留成 artifact，不发 Release。
+      # 这样「验证签名链路」不需要先造一个版本号出来。
+      - name: Upload the signed APK as an artifact (manual trigger)
+        if: github.event_name == 'workflow_dispatch' && env.ANDROID_SIGNING_READY == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          retention-days: 7
+
+      # 没配签名密钥时退回 debug 包，至少还能验证「编得出来」。
+      - name: Build debug APK (no signing key)
+        if: github.event_name == 'workflow_dispatch' && env.ANDROID_SIGNING_READY != 'true'
         env:
           MAPS_API_KEY: ''
         run: ./gradlew :app:assembleDebug
 
       - name: Upload debug APK artifact
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && env.ANDROID_SIGNING_READY != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: android-debug-apk
