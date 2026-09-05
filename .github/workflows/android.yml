@@ -1,0 +1,112 @@
+# 单元测试。每次推送都跑。
+#
+# 为什么这条是新加的
+# ------------------
+# 拆仓之前，安卓的 5 个单元测试**从来没有在 CI 里跑过**。仓库里配好了 junit /
+# mockk / coroutines-test，测试文件也在，但 build.yml 里只有 assembleRelease
+# （打 tag 时）和 assembleDebug（手动触发），没有任何地方调 testDebugUnitTest。
+#
+# 这跟 iOS 那边踩过的是同一个形状：测试写好了、依赖装好了、谁都没运行它，而仓库
+# 看上去是有测试的。
+name: Android Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0'
+
+      # google-services.json 不进仓库（含项目标识），但 Gradle 的 Google
+      # Services 插件在配置阶段就要它——缺文件会让**配置期**失败，连测试任务都
+      # 生成不出来。测试用不到真实的 Firebase 项目，所以写一份结构合法的占位。
+      #
+      # 用真的那份也行（secret 里有），但那会让「跑个单元测试」需要一个 secret，
+      # 从 fork 提 PR 就跑不了了。
+      - name: Write a placeholder google-services.json
+        run: |
+          set -euo pipefail
+          mkdir -p app
+          cat > app/google-services.json <<'JSON'
+          {
+            "project_info": {
+              "project_number": "000000000000",
+              "project_id": "flatradar-ci-placeholder",
+              "storage_bucket": "flatradar-ci-placeholder.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+                  "android_client_info": { "package_name": "com.flatradar.app" }
+                },
+                "oauth_client": [],
+                "api_key": [ { "current_key": "AIzaSyCI0000000000000000000000000000000" } ],
+                "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
+              }
+            ],
+            "configuration_version": "1"
+          }
+          JSON
+          python3 -c "import json; json.load(open('app/google-services.json'))"
+
+      - name: Run unit tests
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
+
+      # 「跑绿了」和「跑了」是两回事。
+      #
+      # iOS 那边吃过这个亏：xcodebuild 打印 Test Succeeded、退出 0，而执行条数是
+      # 0——测试 target 没挂上源码目录，什么都没编译。Gradle 也一样：过滤条件写
+      # 错、source set 配错、任务被 UP-TO-DATE 跳过，都会得到一个「成功」的绿。
+      #
+      # 所以数一遍 XML 报告里的 testcase。
+      - name: Assert the tests actually ran
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import glob, sys, xml.etree.ElementTree as ET
+
+          files = glob.glob("app/build/test-results/testDebugUnitTest/*.xml")
+          if not files:
+              sys.exit("没有找到测试报告——testDebugUnitTest 没有真正执行")
+
+          total = failures = errors = skipped = 0
+          for f in files:
+              r = ET.parse(f).getroot()
+              total += int(r.get("tests", 0))
+              failures += int(r.get("failures", 0))
+              errors += int(r.get("errors", 0))
+              skipped += int(r.get("skipped", 0))
+
+          print(f"执行 {total} 条：失败 {failures}，错误 {errors}，跳过 {skipped}")
+          if total == 0:
+              sys.exit("报告里执行条数为 0——绿的，但什么都没测")
+          if failures or errors:
+              sys.exit("有测试未通过")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-reports
+          path: app/build/reports/tests/
+          retention-days: 7
