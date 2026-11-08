@@ -3,8 +3,7 @@
 [![Android Tests](https://img.shields.io/github/actions/workflow/status/751K/FlatRadar-Android/android.yml?style=flat-square&label=tests)](https://github.com/751K/FlatRadar-Android/actions/workflows/android.yml)
 [![Platform](https://img.shields.io/badge/Android-8.0%2B-3DDC84?style=flat-square&logo=android&logoColor=white)](https://developer.android.com/)
 [![Compose](https://img.shields.io/badge/Jetpack_Compose-Kotlin-7F52FF?style=flat-square&logo=kotlin&logoColor=white)](https://developer.android.com/jetpack/compose)
-[![Backend](https://img.shields.io/badge/backend-holland2stay--monitor-0057CC?style=flat-square&logo=github)](https://github.com/751K/holland2stay-monitor)
-[![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue?style=flat-square)](https://github.com/751K/holland2stay-monitor/blob/master/LICENSE)
+[![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue?style=flat-square)](https://github.com/751K/Flatradar/blob/master/LICENSE)
 
 The Android client for [FlatRadar](https://flatradar.app), a monitor for the
 Dutch rental market. It watches seven platforms — Holland2Stay, OurDomain,
@@ -12,7 +11,7 @@ OurCampus, Xior, Magis, Plaza and Student Experience — and pushes a notificati
 the moment a listing matches what you are looking for.
 
 The scraping, matching and notification pipeline lives in the backend repo,
-[751K/holland2stay-monitor](https://github.com/751K/holland2stay-monitor). This
+[751K/Flatradar](https://github.com/751K/Flatradar). This
 repo is the app that sits in front of it. The iOS client is at
 [751K/FlatRadar-iOS](https://github.com/751K/FlatRadar-iOS).
 

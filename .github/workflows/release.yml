@@ -1,6 +1,6 @@
 # 打 tag 出签名 APK，传到 Release 页。
 #
-# 从 751K/holland2stay-monitor 的 build.yml 搬过来（那个文件同时还打 macOS 的
+# 从 751K/Flatradar 的 build.yml 搬过来（那个文件同时还打 macOS 的
 # .dmg 和 Windows 的 .exe，那两个 job 留在后端仓库）。
 #
 # 只出 APK。AAB 只有 Google Play 上架才用得上，而上架计划已放弃（2026-08-03）
